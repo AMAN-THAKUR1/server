@@ -8,8 +8,8 @@ const server = http.createServer(app)
 const PORT = 5000
 const Rooms = [{ user: 1, code: 11111},{ user: 1, code: 39927 }]
 const member = { } 
-const names = ["CHUTAD", "LUND", "FUDDI", "GANDU", "BHOSDA", "LULLI", "CHUPA", "TATTA"];
-const color = [ "#1B263B", "#2D2A32","#4B3F72","#0D3B66","#343A40","#42273B","#264653","#2C3E50","#3D2C29","#1C1B1A"]
+const names = ["Pandit", "Ranga", "zulfu", "gingad", "Adwani", "Ambani", "Bishnoi", "Salman"];
+const color = [ "#FF4136","#FF851B","#FFDC00","#2ECC40","#0074D9","#B10DC9","#F012BE","#7FDBFF","#01FF70","#F500F5"];
 
 
 const io = new Server(server, {
