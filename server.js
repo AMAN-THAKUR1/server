@@ -2,19 +2,20 @@ const express = require("express");
 const cors = require("cors");
 const http = require("http")
 const { Server } = require("socket.io");
-
+const path = require("path");
+const fs = require("fs");
 const app = express();
 const server = http.createServer(app)
 const PORT = 5000
-const Rooms = [{ user: 1, code: 11111},{ user: 1, code: 39927 }]
-const member = { } 
+const Rooms = [{ user: 1, code: 11111 }, { user: 1, code: 39927 }]
+const member = {}
 const names = ["Pandit", "Ranga", "zulfu", "gingad", "Adwani", "Ambani", "Bishnoi", "Salman"];
-const color = [ "#FF4136","#FF851B","#FFDC00","#2ECC40","#0074D9","#B10DC9","#F012BE","#7FDBFF","#01FF70","#F500F5"];
+const color = ["#FF4136", "#FF851B", "#FFDC00", "#2ECC40", "#0074D9", "#B10DC9", "#F012BE", "#7FDBFF", "#01FF70", "#F500F5"];
 
 
 const io = new Server(server, {
     cors: {
-        origin: "*", // Allow all origins or specify your frontend URL
+        origin: "*",
         methods: ["GET", "POST"],
     },
 });
@@ -41,64 +42,74 @@ app.get("/create", (req, res) => {
     const code = random();
     const room = { user: 1, code: code }
     Rooms.push(room);
-    console.log(code);
-    console.log(Rooms);
     res.status(201).json(code);
 })
 
 
 io.on('connection', (socket) => {
-    console.log('A user connected:', socket.id); // Log when a user connects
-
-
     socket.on('joinRoom', (roomId) => {
-        const roomIdStr = String(roomId);  // Convert roomId to a string
+        const roomIdStr = String(roomId);
         if (!member[roomIdStr]) {
             member[roomIdStr] = []
         }
 
-        // Check if the room exists in the Rooms array
         const roomExists = Rooms.find((r) => r.code == roomIdStr);
 
         if (roomExists) {
             const userAttributes = assignRandomAttributes(member[roomIdStr]);
-                member[roomIdStr].push({ socketId: socket.id, ...userAttributes });
-            
-            socket.join(roomIdStr);  // Add user to the room
-            
+            member[roomIdStr].push({ socketId: socket.id, ...userAttributes });
+
+            socket.join(roomIdStr);
+
             socket.emit('assignedAttributes', userAttributes);
             io.to(String(roomIdStr)).emit('roomusers', member[roomIdStr]);
-
-            console.log(`User ${socket.id} successfully joined room ${roomIdStr}`);
         } else {
             console.log(`Room ${roomIdStr} does not exist, cannot join.`);
         }
 
-        // Log users in the room
         const clientsInRoom = io.sockets.adapter.rooms.get(roomIdStr);
-        console.log(`Users in room ${roomIdStr}:`, clientsInRoom);
     });
 
 
 
     socket.on('message', (data) => {
-        console.log(`Message received in room ${data.roomId}: ${data.message}`);
-        const user = member[String(data.roomId)].find((item)=> item.socketId == socket.id )
+        const user = member[String(data.roomId)].find((item) => item.socketId == socket.id)
 
-        io.to(String(data.roomId)).emit('message', {message: data.message,
-                                                    name: user.name,
-                                                    color: user.color});  // Broadcast to users in the specific room
-        console.log(`Message broadcasted to room ${data.roomId}: ${data.message}`);
-
+        io.to(String(data.roomId)).emit('message', {
+            message: data.message,
+            name: user.name,
+            color: user.color
+        });
     });
 
-    
+    socket.on('send-file', (data) => {
+        const user = member[String(data.roomId)].find((item) => item.socketId == socket.id)
 
-    // Handle socket disconnection
+        const { roomId, fileName, fileBuffer } = data;
+        const buffer = Buffer.isBuffer(fileBuffer) ? fileBuffer : Buffer.from(fileBuffer, 'binary');
+
+        const filePath = path.join(__dirname, 'uploads', fileName);
+        if (!fs.existsSync(path.join(__dirname, 'uploads'))) {
+            fs.mkdirSync(path.join(__dirname, 'uploads'), { recursive: true });
+        }
+
+        fs.writeFileSync(filePath, buffer);
+        console.log(`File saved at ${filePath}`);
+        io.to(String(roomId)).emit('fileBroadcast', { fileName, fileBuffer, name: user.name });
+    });
+
+    socket.on('user-left', ({ code, name }) => {
+        const leftname = name;
+        if (member[String(code)]) {
+            member[String(code)] = member[String(code)].filter(item =>
+                item.name !== name)
+        }
+        const newusers = member[String(code)]
+        io.to(String(code)).emit('update-users', { newusers, leftname })
+    })
     socket.on('disconnect', () => {
-        console.log('User disconnected:', socket.id);
+
     });
-    console.log(socket.rooms);
 });
 
 
@@ -108,7 +119,6 @@ app.post("/delete", (req, res) => {
         const code = req.body.code;
         let index = -1
         Rooms.forEach((item, i) => {
-
             if (item.code == code) {
                 item.user = item.user - 1;
             }
@@ -117,25 +127,33 @@ app.post("/delete", (req, res) => {
             }
         })
         if (index !== -1) {
+            
+            const roomDirectoryPath = path.join(__dirname, 'uploads', code);
+
+            if (fs.existsSync(roomDirectoryPath)) {
+                const files = fs.readdirSync(roomDirectoryPath); // Read files in the room's folder
+                files.forEach((file) => {
+                    const filePath = path.join(roomDirectoryPath, file);
+                    fs.unlinkSync(filePath); // Delete each file
+                });
+
+                // After deleting the files, remove the room directory if it's empty
+                fs.rmdirSync(roomDirectoryPath);
+                console.log(`Removed all files and directory for room ${code}`);
+            }
+
             Rooms.splice(index, 1);
             delete member[code]
         }
-
-        console.log(Rooms);
         res.sendStatus(201);
     } catch (error) {
-        console.log(error);
         res.sendStatus(400);
-
     }
-
 });
 
 
 app.post("/join", (req, res) => {
-
     const code = req.body.code;
-    console.log(code);
     if (Rooms.length == 0) {
         res.status(400).send({ message: "Room doesnt exist" });
     }
@@ -143,9 +161,7 @@ app.post("/join", (req, res) => {
         const result = Rooms.filter((item) => item.code == code)
         if (result.length !== 0) {
             result[0].user += 1;
-            console.log(result);
             res.status(200).send({ message: "Room exist you are added to it" });
-
         }
         else {
             res.status(400).send({ message: "Room doesnt exist" });
